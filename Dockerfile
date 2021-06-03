@@ -9,7 +9,8 @@ RUN printf "#!/bin/sh\nexit 0" > /usr/sbin/policy-rc.d
 RUN chmod +x /usr/sbin/policy-rc.d
 
 # 从github上拉取的代码竞技场文件，加快build速度
-# COPY arena ./arena
+COPY arena ./arena
+COPY pyedu ./pyedu
 
 # 安装命令
 
@@ -25,8 +26,8 @@ RUN mv /etc/apt/sources.list /etc/apt/sources_bak.list &&\
 
 # github速度慢，使用本地缓存的结果
 # RUN git clone -b num_chooser_alias --recurse-submodules https://github.com/YukkuriC/django_ai_arena.git arena
-RUN mkdir arena
-RUN git clone -b avg_score http://162.105.17.143:1280/YukkuriC/pyedu.collection.git pyedu
+# auto build无法拉取这些文件
+# RUN git clone -b avg_score http://162.105.17.143:1280/YukkuriC/pyedu.collection.git pyedu
 
 # 写入setup.json和override.json
 RUN echo "{}" > /home/lab409/pyedu/pyedu/setup.json &&\
