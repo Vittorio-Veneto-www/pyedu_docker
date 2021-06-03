@@ -24,7 +24,8 @@ RUN mv /etc/apt/sources.list /etc/apt/sources_bak.list &&\
   apt-get update
 
 # github速度慢，使用本地缓存的结果
-RUN git clone -b num_chooser_alias --recurse-submodules https://github.com/YukkuriC/django_ai_arena.git arena
+# RUN git clone -b num_chooser_alias --recurse-submodules https://github.com/YukkuriC/django_ai_arena.git arena
+mkdir arena
 RUN git clone -b avg_score http://162.105.17.143:1280/YukkuriC/pyedu.collection.git pyedu
 
 # 写入setup.json和override.json
