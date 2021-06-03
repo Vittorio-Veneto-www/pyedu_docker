@@ -9,7 +9,7 @@ RUN printf "#!/bin/sh\nexit 0" > /usr/sbin/policy-rc.d
 RUN chmod +x /usr/sbin/policy-rc.d
 
 # 从github上拉取的代码竞技场文件，加快build速度
-COPY arena ./arena
+# COPY arena ./arena
 
 # 安装命令
 
