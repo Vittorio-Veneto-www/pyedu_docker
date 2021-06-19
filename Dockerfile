@@ -18,9 +18,6 @@ RUN { \
 #设置Python IO编码
 ENV PYTHONIOENCODING UTF-8
 
-# 从github上拉取的代码竞技场文件，加快build速度
-COPY arena ./arena
-
 # 安装命令
 
 # 换清华源源加快apt速度
@@ -44,7 +41,9 @@ RUN echo 'deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu/ bionic main restricte
   apt-get clean &&\
   apt-get update
 
-RUN apt-get install -y apache2 libapache2-mod-wsgi-py3 python3-pip mysql-server mysql-client git
+RUN apt-get install -y apache2 libapache2-mod-wsgi-py3
+RUN apt-get install -y python3-pip git
+RUN apt-get install -y mysql-server mysql-client
 
 # apt安装的pip版本太低，不支持config方法
 # RUN pip3 config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
@@ -53,17 +52,27 @@ RUN mkdir ~/.pip &&\
   index-url = https://pypi.tuna.tsinghua.edu.cn/simple' > ~/.pip/pip.conf &&\
   pip3 install django django-filter django-cron numpy pymysql yapf
 
+# 从github上拉取的代码竞技场文件，加快build速度
+COPY arena ./arena
+COPY pyedu ./pyedu
+
 # github速度慢，使用本地缓存的结果
 # RUN git clone -b num_chooser_alias --recurse-submodules https://github.com/YukkuriC/django_ai_arena.git arena
-RUN git clone -b avg_score http://162.105.17.143:1280/YukkuriC/pyedu.collection.git pyedu
+# RUN git clone -b avg_score http://162.105.17.143:1280/YukkuriC/pyedu.collection.git pyedu
+
+ENV SECRET_KEY xianbei
+ENV MYSQL_DB test
+ENV MYSQL_USER django
+ENV MYSQL_PASSWD test
+ENV DJANGO_SUPERUSER_USERNAME test
+ENV DJANGO_SUPERUSER_EMAIL a@b.cd
+ENV DJANGO_SUPERUSER_PASSWORD 114514
 
 # 写入setup.json和override.json
-# ENV SECRET_KEY 114514
-# ENV MYSQL_USER root
-# ENV MYSQL_PASSWD=
-RUN echo "{\"SECRET_KEY\" : \"xianbei\",\"MYSQL_DB\" : \"test\",\"MYSQL_USER\" : \"django\",\"MYSQL_PASSWD\" : \"test\",\"MYSQL_HOST\" : \"127.0.0.1\",\"MYSQL_PORT\" : \"3306\"}" > /home/lab409/pyedu/pyedu/setup.json &&\
-  echo "{\"SECRET_KEY\" : \"xianbei\",\"DEBUG\" : 1}" > /home/lab409/arena/override.json &&\
-  echo "{\"SECRET_KEY\" : \"xianbei\",\"DEBUG\" : 1}" > /home/lab409/pyedu/pyedu/override.json
+RUN echo "{\"SECRET_KEY\" : \"$SECRET_KEY\"}" > /home/lab409/arena/.env &&\
+  echo "{\"SECRET_KEY\" : \"$SECRET_KEY\",\"DEBUG\" : 1}" > /home/lab409/arena/override.json &&\
+  echo "{\"SECRET_KEY\" : \"$SECRET_KEY\",\"MYSQL_DB\" : \"$MYSQL_DB\",\"MYSQL_USER\" : \"$MYSQL_USER\",\"MYSQL_PASSWD\" : \"$MYSQL_PASSWD\",\"MYSQL_HOST\" : \"127.0.0.1\",\"MYSQL_PORT\" : \"3306\"}" > /home/lab409/pyedu/pyedu/setup.json &&\
+  echo "{\"SECRET_KEY\" : \"$SECRET_KEY\",\"DEBUG\" : 1}" > /home/lab409/pyedu/pyedu/override.json
 
 # 需要将apache使用www-data用户写入的文件
 # 例如数据库文件和用户上传的内容
@@ -134,36 +143,48 @@ echo '<VirtualHost *:8001>\n\
 RUN a2ensite arena &&\
   a2ensite pyedu
 
-ENV DJANGO_SUPERUSER_USERNAME test
-ENV DJANGO_SUPERUSER_EMAIL a@b.cd
-ENV DJANGO_SUPERUSER_PASSWORD 114514
+# pyedu初始化部分 使用MySQL 故包括了MySQL初始化
+# 对错误代码的临时修正
+# COPY settings.py /home/lab409/pyedu/pyedu/main/
+RUN sed -i "s/if True:/if False:/ ; s/1, 3, 13/1, 4, 0/" /home/lab409/pyedu/pyedu/main/settings.py
 
-COPY settings.py /home/lab409/pyedu/pyedu/main/
-COPY mysqld.cnf /etc/mysql/mysql.conf.d/
-RUN mkdir /var/lib/mysql/data &&\
+RUN sed -i "s/.*datadir.*/datadir\t\t= \/var\/lib\/mysql\/data/" /etc/mysql/mysql.conf.d/mysqld.cnf &&\
+  echo "user\t\t= www-data" >> /etc/mysql/mysql.conf.d/mysqld.cnf &&\
+  mkdir /var/lib/mysql/data &&\
   chown -R www-data /var/lib/mysql/data &&\
   chown -R www-data /var/lib/mysql &&\
   chown -R www-data /var/run/mysqld &&\
   chown -R www-data /var/log/mysql &&\
   mysqld --initialize-insecure &&\
-  echo "create database test;\n\
-    create user 'django'@'localhost' identified by 'test';\n\
-    grant usage on *.* to 'django'@'localhost';\n\
-    grant all privileges on test.* to 'django'@'localhost';"\ > createuser.sql
-RUN echo "mysqld &" > /tmp/config &&\
+  echo "create database $MYSQL_DB;\n\
+    create user '$MYSQL_USER'@'localhost' identified by '$MYSQL_PASSWD';\n\
+    grant usage on *.* to '$MYSQL_USER'@'localhost';\n\
+    grant all privileges on $MYSQL_DB.* to '$MYSQL_USER'@'localhost';"\ > createuser.sql &&\
+  echo "mysqld &" > /tmp/config &&\
   echo "mysqladmin --silent --wait=100 ping || exit 1" >> /tmp/config &&\
   echo "mysql -uroot < createuser.sql" >> /tmp/config &&\
   echo "python3 /home/lab409/pyedu/tools/migrate.py" >> /tmp/config &&\
   echo "python3 /home/lab409/pyedu/pyedu/manage.py collectstatic --no-input" >> /tmp/config &&\
   echo "if [ \"$DJANGO_SUPERUSER_USERNAME\" ]\n\
     then\n\
-    python3 /home/lab409/pyedu/pyedu/manage.py createsuperuser --no-input --username $DJANGO_SUPERUSER_USERNAME --email     $DJANGO_SUPERUSER_EMAIL\n\
+    python3 /home/lab409/pyedu/pyedu/manage.py createsuperuser --no-input --username $DJANGO_SUPERUSER_USERNAME --email $DJANGO_SUPERUSER_EMAIL\n\
     fi" >> /tmp/config &&\
   bash /tmp/config &&\
   rm -f /tmp/config createuser.sql &&\
   mysqladmin shutdown
 
+# arena初始化部分 使用sqlite
+RUN echo "python3 /home/lab409/arena/update_sql.py" > /tmp/config &&\
+  echo "chown -R www-data /home/lab409/arena/db.sqlite3" >> /tmp/config &&\
+  echo "chown -R www-data /home/lab409/arena" >> /tmp/config &&\
+  echo "python3 /home/lab409/arena/manage.py collectstatic --no-input" >> /tmp/config &&\
+  echo "if [ \"$DJANGO_SUPERUSER_USERNAME\" ]\n\
+    then\n\
+    python3 /home/lab409/arena/manage.py createsuperuser --no-input --username $DJANGO_SUPERUSER_USERNAME --email $DJANGO_SUPERUSER_EMAIL\n\
+    fi" >> /tmp/config &&\
+  bash /tmp/config
+
 EXPOSE 8000 8001
 
-CMD apachectl start | mysqld
-# tail -f /dev/null
+# CMD apachectl start | mysqld
+CMD apachectl start | tail -f /dev/null
